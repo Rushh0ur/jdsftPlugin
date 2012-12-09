@@ -59,7 +59,16 @@ public class sftBinary {
 
         // encode the crypted content
         RC4 rc4 = new RC4(sha1_key);
-        rc4.encode(body);
+        for (int dpos = 0; dpos < body.length; dpos += 0x2000) {
+            int end = dpos + 0x2000;
+            if (end > body.length) end = body.length;
+
+            byte[] body_block = Arrays.copyOfRange(body, dpos, end);
+            rc4.encode(body_block);
+
+            for (int i = dpos; i < end; ++i)
+                body[i] = body_block[i - dpos];
+        }
 
         ByteArrayInputStream bis = new ByteArrayInputStream(body);
         DataInputStream ois = new DataInputStream(bis);
@@ -78,11 +87,6 @@ public class sftBinary {
         rc4.encode(body);
 
         body = sft08_deObfuscateBody(body);
-
-        /*
-         * FileOutputStream fileoutputstream = new FileOutputStream("C:\\test.dfm");
-         * fileoutputstream.write(body, 0, body.length); fileoutputstream.close();
-         */
 
         ByteArrayInputStream bis = new ByteArrayInputStream(body);
         DataInputStream ois = new DataInputStream(bis);
