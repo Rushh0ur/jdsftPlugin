@@ -6,6 +6,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.zip.Inflater;
 
@@ -84,9 +85,18 @@ public class sftBinary {
         byte[] magicDecryptionKey = sft08_getMagicDecryptionKeyFromHeader(header);
 
         RC4 rc4 = new RC4(Arrays.copyOf(magicDecryptionKey, 128));
-        rc4.encode(body);
+        for (int dpos = 0; dpos < body.length; dpos += 0x2000) {
+            int end = dpos + 0x2000;
+            if (end > body.length) end = body.length;
 
-        body = sft08_deObfuscateBody(body);
+            byte[] body_block = Arrays.copyOfRange(body, dpos, end);
+            rc4.encode(body_block);
+
+            for (int i = dpos; i < end; ++i)
+                body[i] = body_block[i - dpos];
+        }
+
+        body = sft08_lmaaDudeDecrypt(body);
 
         ByteArrayInputStream bis = new ByteArrayInputStream(body);
         DataInputStream ois = new DataInputStream(bis);
@@ -200,82 +210,79 @@ public class sftBinary {
         }
     }
 
-    protected static byte[] sft08_deObfuscateBody(byte[] body) throws Exception {
-        byte[] resultFu = new byte[body.length * 16];
-        int len = 0;
-        int magicFirst = (((int) (body[1] & 0xFF) << 8) | (body[0] & 0xFF)) & 0xFFFF;
+    protected static byte[] sft08_lmaaDudeDecrypt(byte[] body) throws Exception {
+        int blockPos = 0;
+        int totalSize = 0;
 
-        // int magicSecond = (int)body[2] & 0xFF;
-        int magicThird = (int) body[3] & 0xFF;
-        int magicQuad = (int) body[4] & 0xFF;
-        int DX = 3;
-        int AX = 0;
+        ArrayList<byte[]> blocks = new ArrayList<byte[]>();
 
-        int EBP_A = 0;
-        int EBP_C = 0;
+        // decode blocks
+        while (blockPos < body.length) {
+            int blockSize = ((body[blockPos + 1] & 0xFF) << 8) | (body[blockPos] & 0xFF);
+            blockPos += 2;
 
-        int EBP_E = 0;
+            byte[] block = Arrays.copyOfRange(body, blockPos, blockPos + blockSize);
+            block = sft08_lmaaDudeDecryptBlock(block);
+            blockPos += blockSize;
 
-        int temp2 = 0;
-        int temp = magicThird << 8;
+            totalSize += block.length;
+            blocks.add(block);
+        }
 
-        EBP_C = (temp + magicQuad) & 0xFFFF;
-        byte EBP11 = 0x10;
+        // merge blocks
+        byte[] body_decrypt = new byte[totalSize];
+        blockPos = 0;
+        for (byte[] block : blocks) {
+            System.arraycopy(block, 0, body_decrypt, blockPos, block.length);
+            blockPos += block.length;
+        }
 
-        do {
-            if (EBP11 == 0) {
-                temp = ((body[DX + 2] & 0xFF) << 8) & 0xFFFF;
-                temp2 = body[DX + 3] & 0xFF;
+        return body_decrypt;
+    }
 
-                EBP_C = (temp + temp2) & 0xFFFF;
-                EBP11 = 0x10;
-                DX += 2;
-            }
+    protected static byte[] sft08_lmaaDudeDecryptBlock(byte[] srcBuff) throws Exception {
+        byte[] dstBuff = new byte[0x8000];
+        int dstPos = 0;
+        int srcPos = 0;
 
-            if ((EBP_C & 0x8000) == 0) {
-                resultFu[AX] = body[DX + 2];
-                if (AX > len) len = AX;
-                DX++;
-                AX++;
-            } else {
-                temp = (body[DX + 2] & 0xFF) << 4;
-                temp2 = (body[DX + 3] & 0xFF) >> 4;
-                EBP_A = ((temp & 0xFFFF) + (temp2 & 0xFFFF)) & 0xFFFF;
+        if (srcBuff[srcPos++] == 0x80) {
+            throw new UnsupportedOperationException("routine not implimented (id: 1)");
+        } else {
+            int EBP_C = 0; // 2 Byte
+            byte EBP11 = 0; // 1 Byte
 
-                if (EBP_A == 0)
-                    throw new Exception("not implemented");
-                else {
-                    temp = body[DX + 3] & 0x0F;
-                    temp += 2;
-                    EBP_E = temp & 0xFFFF;
-
-                    if (EBP_E >= 0) {
-                        int count1 = EBP_E & 0xFFFF;
-
-                        count1++;
-                        int fu = 0;
-
-                        do {
-                            int a = resultFu[(AX - EBP_A) + fu] & 0xFF;
-                            resultFu[fu + AX] = (byte) a;
-                            if (fu + AX > len) len = fu + AX;
-
-                            fu++;
-                            count1--;
-                        } while (count1 != 0);
-
-                    }
-
-                    DX += 2;
-                    AX += EBP_E + 1;
+            while (srcPos < srcBuff.length) {
+                if (EBP11 == 0) {
+                    EBP_C = ((srcBuff[srcPos] & 0xFF) << 8) + (srcBuff[srcPos + 1] & 0xFF);
+                    EBP_C &= 0xFFFF;
+                    EBP11 = 0x10;
+                    srcPos += 2;
                 }
+
+                if ((EBP_C & 0x8000) == 0) {
+                    dstBuff[dstPos++] = srcBuff[srcPos++];
+                } else {
+                    int EBP_A = ((srcBuff[srcPos] & 0xFF) << 4) + ((srcBuff[srcPos + 1] & 0xFF) >> 4);
+
+                    if (EBP_A == 0) {
+                        throw new UnsupportedOperationException("routine not implimented (id: 2)");
+                    } else {
+                        int EBP_E = (srcBuff[srcPos + 1] & 0x0F) + 2;
+
+                        for (int i = 0; i <= EBP_E; ++i) {
+                            dstBuff[i + dstPos] = dstBuff[(dstPos - EBP_A) + i];
+                        }
+
+                        srcPos += 2;
+                        dstPos += EBP_E + 1;
+                    }
+                }
+
+                EBP_C = (EBP_C << 1) & 0xFFFF;
+                --EBP11;
             }
+        }
 
-            EBP_C = (EBP_C << 1) & 0xFFFF;
-            EBP11--;
-
-        } while (DX < magicFirst);
-
-        return Arrays.copyOf(resultFu, len + 1);
+        return Arrays.copyOf(dstBuff, dstPos);
     }
 }
