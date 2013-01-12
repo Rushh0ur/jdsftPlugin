@@ -8,9 +8,10 @@ import java.util.Arrays;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import javax.crypto.Cipher;
-import javax.crypto.spec.SecretKeySpec;
 import javax.xml.bind.DatatypeConverter;
+
+import org.bouncycastle.crypto.engines.BlowfishEngine;
+import org.bouncycastle.crypto.params.KeyParameter;
 
 import sun.misc.BASE64Decoder;
 
@@ -223,14 +224,16 @@ public class sftContainerV8 extends sftContainer {
         byte[] data = base64.decodeBuffer(new String(encrypted));
 
         byte[] IV = new byte[8];
-        SecretKeySpec KS = new SecretKeySpec(sha256, CRYPT_BLOWFISH);
-        Cipher cipher = Cipher.getInstance(CRYPT_BLOWFISH);
-        cipher.init(Cipher.ENCRYPT_MODE, KS);
 
-        IV = Arrays.copyOf(cipher.doFinal(IV), 8);
+        BlowfishEngine cipher = new BlowfishEngine();
+        cipher.init(true, new KeyParameter(sha256));
+        cipher.processBlock(IV, 0, IV, 0);
 
         for (int i = 0; i < data.length; ++i) {
-            byte[] BlowFishRound = Arrays.copyOf(cipher.doFinal(IV), 8);
+            byte[] BlowFishRound = new byte[IV.length];
+            cipher.init(true, new KeyParameter(sha256));
+            cipher.processBlock(IV, 0, BlowFishRound, 0);
+
             byte temp = data[i];
             data[i] ^= BlowFishRound[0];
 

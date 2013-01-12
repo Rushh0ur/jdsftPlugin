@@ -246,7 +246,7 @@ public class sftBinary {
         int srcPos = 0;
 
         if (srcBuff[srcPos++] == 0x80) {
-            throw new UnsupportedOperationException("routine not implimented (id: 1)");
+            throw new UnsupportedOperationException("routine not implemented (id: 1)");
         } else {
             int EBP_C = 0; // 2 Byte
             byte EBP11 = 0; // 1 Byte
@@ -265,7 +265,7 @@ public class sftBinary {
                     int EBP_A = ((srcBuff[srcPos] & 0xFF) << 4) + ((srcBuff[srcPos + 1] & 0xFF) >> 4);
 
                     if (EBP_A == 0) {
-                        throw new UnsupportedOperationException("routine not implimented (id: 2)");
+                        throw new UnsupportedOperationException("routine not implemented (id: 2)");
                     } else {
                         int EBP_E = (srcBuff[srcPos + 1] & 0x0F) + 2;
 
